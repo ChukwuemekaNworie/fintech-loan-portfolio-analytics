@@ -16,6 +16,8 @@
 ------------------------------
 ### Project Overview
 This credit risk engine and portfolio analytics script transforms raw transactional lending data into structured PostgreSQL database profiles. Designed for financial analytics squads and risk engineering teams, it programmatically exposes default vulnerabilities, monitors subprime market concentrations, isolates high-risk consumer behaviors, and restores log-transformed income metrics into real-world currencies for database reporting.
+
+https://www.kaggle.com/datasets/ayushibanik/loan-data-set?select=loan_data.csv
 ------------------------------
 ## Business Introduction
 The fintech organization operates a multi-tiered consumer lending platform across multiple credit policies and loan products. Managing capital allocation effectively requires constant programmatic surveillance of database metrics, borrower repayment mechanics, and evolving macroeconomic distress indicators stored within the core warehouse tables.
