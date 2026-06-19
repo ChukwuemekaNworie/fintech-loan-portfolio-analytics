@@ -1,1 +1,177 @@
+# FinTech Credit Risk & Loan Default Portfolio Engine
 
+## Project Objective
+
+Transform raw lending data into a structured PostgreSQL portfolio for credit risk analysis, borrower segmentation, and default monitoring.
+
+---
+
+## Table Creation
+
+```sql
+CREATE TABLE loan_portfolio (
+    credit_policy INT,
+    purpose VARCHAR(50),
+    int_rate NUMERIC(6,4),
+    installment NUMERIC(10,2),
+    log_annual_inc NUMERIC(10,4),
+    dti NUMERIC(6,2),
+    fico INT,
+    days_with_cr_line NUMERIC(12,4),
+    revol_bal INT,
+    revol_util NUMERIC(6,2),
+    inq_last_6mths INT,
+    delinq_2yrs INT,
+    pub_rec INT,
+    not_fully_paid INT
+);
+```
+
+---
+
+## Data Quality Audit
+
+### Duplicate Detection
+
+```sql
+WITH flagged_duplicate AS (
+    SELECT *,
+           ROW_NUMBER() OVER (
+               PARTITION BY
+                   credit_policy,
+                   purpose,
+                   int_rate,
+                   installment,
+                   log_annual_inc,
+                   dti,
+                   fico,
+                   days_with_cr_line,
+                   revol_bal,
+                   revol_util,
+                   inq_last_6mths,
+                   delinq_2yrs,
+                   pub_rec,
+                   not_fully_paid
+           ) AS row_num_dup
+    FROM loan_portfolio
+)
+
+SELECT COUNT(*) AS total_flagged_duplicate
+FROM flagged_duplicate
+WHERE row_num_dup > 1;
+```
+
+### Key Insight
+
+No duplicate records detected within the lending portfolio.
+
+---
+
+## Outlier Detection
+
+### Top Debt-to-Income Borrowers
+
+```sql
+WITH rank_debt AS (
+    SELECT
+        purpose,
+        fico,
+        dti,
+        not_fully_paid,
+        PERCENT_RANK() OVER (ORDER BY dti DESC) AS dti_percentile
+    FROM loan_portfolio
+)
+
+SELECT
+    purpose,
+    fico,
+    dti,
+    not_fully_paid,
+    ROUND(dti_percentile::NUMERIC,4) AS percentile
+FROM rank_debt
+WHERE dti_percentile <= 0.10
+LIMIT 10;
+```
+
+### Key Insight
+
+Borrowers with extreme DTI ratios represent the highest leverage risk segment.
+
+---
+
+## Credit Risk Analysis
+
+### Default Rate by FICO Score
+
+```sql
+WITH fico_group_metrics AS (
+    SELECT
+        fico,
+        COUNT(*) AS total_loans,
+        SUM(not_fully_paid) AS total_defaults,
+        ROUND(AVG(not_fully_paid) * 100, 2)
+            AS group_default_rate_percent
+    FROM loan_portfolio
+    GROUP BY fico
+)
+
+SELECT
+    fico AS credit_score,
+    total_loans,
+    total_defaults,
+    group_default_rate_percent,
+    DENSE_RANK() OVER (
+        ORDER BY group_default_rate_percent DESC
+    ) AS default_risk_rank
+FROM fico_group_metrics
+ORDER BY group_default_rate_percent DESC;
+```
+
+---
+
+## Behavioral Risk Analysis
+
+### Over-Utilization Desperation Risk
+
+```sql
+SELECT
+    CASE
+        WHEN revol_util >= 75.00
+             AND inq_last_6mths >= 3
+        THEN '1. Desperate: Maxed Cards + Credit Hunting'
+
+        WHEN revol_util >= 75.00
+             AND inq_last_6mths < 3
+        THEN '2. High Utilization Only'
+
+        WHEN revol_util < 50.00
+             AND inq_last_6mths = 0
+        THEN '3. Stable: Low Card Usage & No Inquiries'
+
+        ELSE '4. Moderate Baseline Group'
+    END AS consumer_behavior_profile,
+
+    COUNT(*) AS total_borrowers,
+    SUM(not_fully_paid) AS total_defaults,
+
+    ROUND(
+        AVG(not_fully_paid) * 100,
+        2
+    ) AS default_rate_percentage
+
+FROM loan_portfolio
+
+GROUP BY consumer_behavior_profile
+ORDER BY consumer_behavior_profile;
+```
+
+### Results
+
+| Risk Profile | Borrowers | Defaults | Default Rate |
+|-------------|-----------:|----------:|-------------:|
+| Desperate | 441 | 125 | 28.34% |
+| High Utilization | 1,581 | 292 | 18.47% |
+| Stable | 1,932 | 175 | 9.06% |
+| Moderate | 5,624 | 941 | 16.73% |
+
+---
